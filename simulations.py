@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Description: 比特嵌入器、比特提取器联合训练部分
 import numpy as np
 from utils import awgn, lora_dataset, WmkDataset, LRScheduler, EarlyStopping, split_complex, wgn_torch, \
     rayleigh_coef_torch, cal_ber

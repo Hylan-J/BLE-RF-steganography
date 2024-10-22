@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Description: 比特嵌入器操作部分
 import argparse
 import time
 
@@ -12,14 +15,10 @@ from utils import lora_dataset
 def args_parser():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--keylen', type=int, default=180, help='key size')
+    parser.add_argument('--keylen', type=int, default=20, help='key size')
     parser.add_argument('--device', default=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     parser.add_argument('--datafolder', type=str, default='data_simulation', help='path to save the data')
-
-    parser.add_argument('--fs', type=float, default=1e6, help='sampling frequency')
-    parser.add_argument('--sf', type=int, default=7, help='spreading factor')
-    parser.add_argument('--bw', type=float, default=500e3, help='bandwidth')
 
     args = parser.parse_args()
 

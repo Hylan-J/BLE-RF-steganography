@@ -1,43 +1,9 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Description: 辅助类以及相关函数
 import numpy as np
 from torch.utils.data import Dataset
 import torch
-
-from pyphysim.channels.fading import COST259_TUx, COST259_RAx, TdlChannel, TdlChannelProfile
-from pyphysim.channels.fading_generators import JakesSampleGenerator, RayleighSampleGenerator
-
-import h5py
-
-
-class WmkDataset(Dataset):
-    def __init__(self, data_input, keylen):
-        self.data_input = data_input
-        self.keylen = keylen
-
-    def __len__(self):
-        return len(self.data_input)
-
-    def __getitem__(self, index):
-        data_input = self.data_input[index]
-
-        # data_input = freq_shift(data_input)
-
-        keys = np.random.choice([-1, 1], size=self.keylen)
-
-        data_input = torch.from_numpy(data_input.astype(np.complex64))
-        keys = torch.from_numpy(keys.astype(np.float32))
-        return data_input, keys
-
-
-def freq_shift(data, fs=1e6):
-    if len(data.shape) == 1:
-        data_len = len(data)
-    else:
-        data_len = data.shape[1]
-
-    offset = np.random.uniform(-5000, 5000)
-    t = np.arange(1, data_len + 1) * 1 / fs
-    data = data * np.exp(1j * 2 * np.pi * offset * t)
-    return data
 
 
 def rayleigh_coef_torch(args, omega=1):
@@ -62,12 +28,6 @@ def split_complex(x, method='real_imag'):
     return out
 
 
-def complex_mse_loss(output, target):
-    loss = (0.5 * (output - target) ** 2).mean(dtype=torch.complex64)
-    loss = torch.abs(loss)
-    return loss
-
-
 def lora_symbol(sf, bw, fs, num_symbols):
     # Ts = 1/fs
     N = 2 ** sf
@@ -90,22 +50,9 @@ def lora_dataset(sf=7, bw=125000, num_symbols=8, fs=125000, num_packets=500):
     dummy_dataset = np.tile(sig, (num_packets, 1))
     return dummy_dataset
 
+#dummy_dataset = lora_dataset(sf=7, bw=125e3, fs=1e6, num_symbols=1, num_packets=5000)
+#print(dummy_dataset.shape)
 
-def load_file(filename):
-    f = h5py.File(filename, 'r')
-
-    data = f['preamble'][:]
-    sig_len = int(data.shape[1] / 2)
-    data_complex = data[:, :sig_len] + 1j * data[:, sig_len:]
-    del data
-    message = f['message'][:]
-    # message[message==0] = -1
-
-    cfo = f['cfo'][:]
-
-    f.close()
-
-    return data_complex, message, cfo
 
 
 def cfo_compensation(data, cfo, Ts):
@@ -151,42 +98,6 @@ def cal_exponential_pdp(tau_d, Ts, A_dB=-30):
     return avgPathGains, pathDelays
 
 
-def data_aug_operator(data_in, args, cfo=True, multipath=False):
-    if cfo:
-        data_out = freq_shift(data_out, fs=args.fs)
-
-    if multipath:
-        # data_out = np.zeros(data_in.shape, dtype=complex)
-        Ts = 1 / 500000
-
-        tau_d = np.random.uniform(5, 300) * 1e-9
-        Fd = np.random.uniform(0, 5)
-        # Create a jakes object with 20 rays. This is the fading model that controls how the channel vary in time.
-        # This will be passed to the TDL channel object.
-        chObj = JakesSampleGenerator(Fd=Fd, Ts=Ts, L=5)
-        # chObj = RayleighSampleGenerator()
-        avgPathGains, pathDelays = cal_exponential_pdp(tau_d, Ts)
-
-        # Creates the tapped delay line (TDL) channel model, which accounts for the multipath and thus the
-        # frequency selectivity
-        pdpObj = TdlChannelProfile(avgPathGains,
-                                   pathDelays,
-                                   'Exponential_PDP')
-
-        tdlchannel = TdlChannel(chObj, pdpObj)
-
-        data_corrputed = tdlchannel.corrupt_data(data_in)
-        data_out = data_corrputed[:len(data_corrputed) - tdlchannel.num_taps + 1]
-        # cir = tdlchannel.get_last_impulse_response()
-
-        data_out = awgn(data_out, snr_range=range(80))
-
-    else:
-        data_out = awgn(data_in, snr_range=range(30, 80))
-
-    return data_out
-
-
 def wgn_torch(args, sig_in, snr_min, snr_max):
     SNR_dB = np.random.uniform(snr_min, snr_max)
     SNR_linear = 10 ** (SNR_dB / 10)
@@ -195,8 +106,6 @@ def wgn_torch(args, sig_in, snr_min, snr_max):
     N0 = P / SNR_linear
 
     noise = np.sqrt(N0 / 2) * (torch.complex(torch.randn(sig_in.size()), torch.randn(sig_in.size())))
-
-    # n = torch.complex(torch.nn.init.normal_(torch.Tensor(sig_in.size()), 0, 1), torch.nn.init.normal_(torch.Tensor(sig_in.size()), 0, 1))
 
     return noise.to(args.device)
 
@@ -220,8 +129,27 @@ def awgn(data, snr_range):
     return data_noisy
 
 
-class LRScheduler:
+# ----------------------------------------------------------------------------------------------------------------------
+# 相关类的定义
+# ----------------------------------------------------------------------------------------------------------------------
+class WmkDataset(Dataset):
+    def __init__(self, data_input, keylen):
+        self.data = data_input
+        self.keylen = keylen
 
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        data_input = self.data[index]
+        keys = np.random.choice([-1, 1], size=self.keylen)
+
+        data_input = torch.from_numpy(data_input.astype(np.complex64))
+        keys = torch.from_numpy(keys.astype(np.float32))
+        return data_input, keys
+
+
+class LRScheduler:
     def __init__(self, optimizer, patience=10, min_lr=1e-6, factor=0.1):
         self.optimizer = optimizer
         self.patience = patience
@@ -241,7 +169,6 @@ class LRScheduler:
 
 
 class EarlyStopping:
-
     def __init__(self, patience=20, min_delta=0):
         self.min_delta = min_delta
         self.patience = patience

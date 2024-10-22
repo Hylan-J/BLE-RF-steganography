@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Description: 比特提取器部分
 import argparse
 
 import numpy as np
@@ -31,13 +34,6 @@ def parse_rx_sig(args):
     file_content = loadmat('./matlab_code/' + args.datafolder + '/' + args.datasetname)
     data_complex = file_content['preamble_rx']
     cfo_rx = file_content['cfo_rx']
-    message_payload = file_content['message_payload']
-
-    sig_len = int(data_complex.shape[0])
-
-    # sig_len = int(data.shape[0]/2)
-    # data_complex = data[:sig_len, :] + 1j*data[sig_len:, :]
-    # del data
 
     num_pkts = data_complex.shape[1]
     sig_len = int(data_complex.shape[0])
@@ -57,17 +53,13 @@ def parse_rx_sig(args):
     print('Number of packets to parse: ', num_pkts)
 
     message_nn_decoded_m = []
-
     for i in range(num_pkts):
         preamble = data_complex[:, i]
-        # preamble = preamble/np.sqrt(np.mean(np.abs(preamble)**2)) # normalize the preamble
-
         preamble = np.expand_dims(preamble, axis=0)
         preamble = torch.from_numpy(preamble.astype(np.complex64)).to(args.device)
 
         rep_decode = True
         if rep_decode:
-
             num_stega_preamble = 8
             message_decoded_m = np.zeros((num_stega_preamble, args.keylen))
 
@@ -81,9 +73,6 @@ def parse_rx_sig(args):
 
             message_nn_decoded = stats.mode(message_decoded_m, keepdims=True)[0]
 
-            # message_nn_decoded = np.mean(message_decoded_m, axis = 0)
-            # message_nn_decoded = np.sign(message_nn_decoded)
-
             message_nn_decoded = message_nn_decoded.astype(int).squeeze()
             message_nn_decoded[message_nn_decoded == -1] = 0
             message_nn_decoded_m.append(message_nn_decoded)
@@ -91,20 +80,11 @@ def parse_rx_sig(args):
         else:
 
             message_nn_decoded = model.decode(preamble[:, 2 * int(sig_len / 8):3 * int(sig_len / 8)])
-            # message_nn_decoded = model.decode(preamble[:int(sig_len/8)])
-            # message_nn_decoded = model.decode(std_container)
             message_nn_decoded = torch.sign(message_nn_decoded)
 
             message_nn_decoded = message_nn_decoded.cpu().detach().numpy().astype(int).squeeze()
             message_nn_decoded[message_nn_decoded == -1] = 0
             message_nn_decoded_m.append(message_nn_decoded)
-
-    # mdic = {"message_nn_decoded_rx": message_nn_decoded_m,
-    #         "message_payload": message_payload,
-    #         "cfo_rx": cfo_rx,
-    #         "preamble_rx": data_complex}
-
-    # savemat('./sdr_code/data_experiment.mat', mdic)
 
     savemat('./matlab_code/' + args.datafolder + '/message_nn_decoded_rx.mat',
             {"message_nn_decoded_rx": message_nn_decoded_m})
